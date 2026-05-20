@@ -9,3 +9,5 @@ venv/
 node_modules/
 dist/
 .DS_Store
+data/cloned/
+data/graph.json

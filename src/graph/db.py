@@ -18,9 +18,16 @@ def save_repo(repo_name, functions, features):
         "features": features
     }
     
-    result = collection.insert_one(document)
-    print(f"saved {repo_name} with id {result.inserted_id}")
-    return result.inserted_id
+    result = collection.update_one(
+        {"repo": repo_name},
+        {"$set": document},
+        upsert=True
+    )
+    
+    if result.upserted_id:
+        print(f"saved new repo: {repo_name}")
+    else:
+        print(f"updated existing repo: {repo_name}")
 
 if __name__ == "__main__":
     # test with fake data
