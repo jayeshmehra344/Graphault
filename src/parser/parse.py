@@ -1,6 +1,7 @@
 import ast
 import os
 import networkx as nx
+import json 
 
 def parse_file(filepath):
     with open(filepath, 'r') as f:
@@ -87,8 +88,19 @@ def analyze_repo(repo_path):
 
     return all_functions, all_features
 
+def save_features(all_functions, all_features, output_path):
+    data = {
+        "edges": all_functions,
+        "features": all_features
+    }
+    with open(output_path, 'w') as f:
+        json.dump(data, f, indent=2)
+    print(f"Saved to {output_path}")
+
 if __name__ == "__main__":
     functions, features = analyze_repo("../../data/sample_repo")
     
     for func, data in features.items():
         print(f"{func:<20} cc={data['cyclomatic']}  loc={data['loc']}  in={data['in_degree']}  out={data['out_degree']}")
+    
+    save_features(functions, features, "../../data/graph.json")
