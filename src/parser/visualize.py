@@ -14,18 +14,17 @@ def build_graph(all_functions):
     return graph
 
 def visualize(graph):
-    plt.figure(figsize=(16, 12))
-    pos = nx.spring_layout(graph, seed=42, k=3)
-    
-    nx.draw_networkx_nodes(graph, pos, node_size=2000, node_color="#4f86f7")
-    nx.draw_networkx_edges(graph, pos, arrows=True, arrowsize=20)
-    nx.draw_networkx_labels(graph, pos, font_size=9, font_color="white")
-    
-    plt.title("CodeSense — Function Call Graph")
+    plt.figure(figsize=(14, 10))
+    pos = nx.spring_layout(graph, seed=42, k=2)
+
+    nx.draw_networkx_nodes(graph, pos, node_size=1500, node_color="#4f86f7", alpha=0.9)
+    nx.draw_networkx_edges(graph, pos, arrows=True, arrowsize=15, edge_color="#aaaaaa")
+    nx.draw_networkx_labels(graph, pos, font_size=8, font_color="white", font_weight="bold")
+
+    plt.title("CodeSense — Function Call Graph", fontsize=14)
     plt.axis("off")
-    plt.margins(0.2)
-    plt.tight_layout()
-    plt.savefig("graph.png", dpi=150)
+    plt.subplots_adjust(left=0.1, right=0.9, top=0.9, bottom=0.1)
+    plt.savefig("graph.png", dpi=150, bbox_inches="tight")
     print("saved to graph.png")
 
 if __name__ == "__main__":
