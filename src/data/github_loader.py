@@ -17,6 +17,15 @@ load_dotenv()
 
 BASE_URL = "https://api.github.com"
 CLONE_DIR = Path(__file__).parent.parent.parent / "tmp" / "github_repos"
+CHECKPOINT_COL = "github_checkpoints"
+
+STAR_RANGES = [
+    ("1..10",      "student"),
+    ("11..50",     "small"),
+    ("51..200",    "medium"),
+    ("201..1000",  "large"),
+    ("1001..5000", "professional"),
+]
 
 
 # ---------- GitHub API helpers ----------
@@ -56,6 +65,63 @@ def _gh_get(url, params=None, accept=None, retries=3):
     return None
 
 
+# ---------- Checkpoint helpers ----------
+
+def _load_checkpoints(db):
+    """Return (visited_set, repos_with_bugs_count) from previous runs."""
+    docs = list(db[CHECKPOINT_COL].find({}, {"repo_full_name": 1, "had_bugs": 1, "_id": 0}))
+    visited = {d["repo_full_name"] for d in docs}
+    with_bugs = sum(1 for d in docs if d.get("had_bugs", False))
+    return visited, with_bugs
+
+
+def _save_checkpoint(db, repo_full_name, inserted, had_bugs):
+    db[CHECKPOINT_COL].update_one(
+        {"repo_full_name": repo_full_name},
+        {"$set": {"repo_full_name": repo_full_name, "inserted": inserted, "had_bugs": had_bugs}},
+        upsert=True,
+    )
+
+
+# ---------- Candidate collection ----------
+
+def _collect_candidates(target_per_range=600):
+    """Search repos across all star range tiers, up to target_per_range each."""
+    all_candidates = []
+    seen = set()
+    for star_range, tier in STAR_RANGES:
+        print(f"  stars:{star_range} ({tier}) ...", end=" ", flush=True)
+        collected = 0
+        page = 1
+        while collected < target_per_range and page <= 10:
+            resp = _gh_get(
+                f"{BASE_URL}/search/repositories",
+                params={
+                    "q": f"language:python stars:{star_range}",
+                    "sort": "updated",
+                    "order": "desc",
+                    "per_page": 100,
+                    "page": page,
+                },
+            )
+            time.sleep(2)
+            if resp is None:
+                break
+            items = resp.json().get("items", [])
+            if not items:
+                break
+            for item in items:
+                if item["full_name"] not in seen:
+                    seen.add(item["full_name"])
+                    all_candidates.append(item)
+                    collected += 1
+                if collected >= target_per_range:
+                    break
+            page += 1
+        print(f"{collected} found")
+    return all_candidates
+
+
 # ---------- Code analysis ----------
 
 def _get_functions_with_ranges(source_code):
@@ -69,7 +135,7 @@ def _get_functions_with_ranges(source_code):
     for node in ast.walk(tree):
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
             start = node.lineno
-            end = node.end_lineno  # available in Python 3.8+
+            end = node.end_lineno
             snippet = "\n".join(lines[start - 1:end])
             result.append((node.name, start, end, snippet))
     return result
@@ -124,7 +190,6 @@ def _get_closing_commit(repo_full_name, issue_number):
     3. Cross-referenced merged PR via the timeline API — the common case where
        a PR description says 'closes #N' and the merge commit is what we want.
     """
-    # Strategies 1 & 2: regular events endpoint
     resp = _gh_get(f"{BASE_URL}/repos/{repo_full_name}/issues/{issue_number}/events")
     if resp is not None:
         referenced_sha = None
@@ -137,7 +202,6 @@ def _get_closing_commit(repo_full_name, issue_number):
         if referenced_sha:
             return referenced_sha
 
-    # Strategy 3: timeline — find a cross-referenced merged PR
     resp = _gh_get(
         f"{BASE_URL}/repos/{repo_full_name}/issues/{issue_number}/timeline",
         accept="application/vnd.github.mockingbird-preview+json",
@@ -209,7 +273,6 @@ def _process_commit(repo_full_name, commit_sha, repo_name, collection):
 
         old_changed, new_changed = _parse_changed_lines(patch)
 
-        # Old file → label buggy (1) or clean (0) for every function
         if status != "added":
             old_content = _get_file_content(repo_full_name, path, parent_sha)
             time.sleep(0.25)
@@ -230,7 +293,6 @@ def _process_commit(repo_full_name, commit_sha, repo_name, collection):
                         if label == 1:
                             buggy_inserted += 1
 
-        # New file → only the changed functions, as fixed (label=0) examples
         if status != "removed":
             new_content = _get_file_content(repo_full_name, path, commit_sha)
             time.sleep(0.25)
@@ -254,52 +316,39 @@ def _process_commit(repo_full_name, commit_sha, repo_name, collection):
 
 # ---------- Entry point ----------
 
-def load_github(max_repos=15, bugs_per_repo=5):
+def load_github(max_repos=1000, bugs_per_repo=15):
     CLONE_DIR.mkdir(parents=True, exist_ok=True)
-
     db = get_db()
     collection = db["labeled_functions"]
 
-    print(f"Searching Python repos (10-500 stars)...")
-    repo_candidates = []
-    page = 1
-    while len(repo_candidates) < max_repos * 3 and page <= 5:
-        resp = _gh_get(
-            f"{BASE_URL}/search/repositories",
-            params={
-                "q": "language:python stars:10..500",
-                "sort": "updated",
-                "order": "desc",
-                "per_page": 30,
-                "page": page,
-            },
-        )
-        if resp is None:
-            break
-        items = resp.json().get("items", [])
-        if not items:
-            break
-        repo_candidates.extend(items)
-        page += 1
-        time.sleep(2)
+    visited, already_with_bugs = _load_checkpoints(db)
+    remaining = max(0, max_repos - already_with_bugs)
+    print(f"Checkpoint: {len(visited)} repos visited, {already_with_bugs} had bugs. Need {remaining} more with bugs.")
+
+    if remaining == 0:
+        print("Target already reached.")
+        return
+
+    print(f"\nCollecting repo candidates across {len(STAR_RANGES)} star tiers...")
+    target_per_range = min(800, max(200, remaining * 5 // len(STAR_RANGES)))
+    candidates = _collect_candidates(target_per_range)
+    print(f"Total candidates: {len(candidates)}\n")
 
     total_inserted = 0
-    repos_processed = 0
-    repos_skipped = 0
-    seen_repos = set()
+    newly_with_bugs = 0
 
-    for repo_data in repo_candidates:
-        if repos_processed >= max_repos:
+    for repo_data in candidates:
+        if newly_with_bugs >= remaining:
             break
 
         repo_full_name = repo_data["full_name"]
-        if repo_full_name in seen_repos:
+        if repo_full_name in visited:
             continue
-        seen_repos.add(repo_full_name)
-        default_branch = repo_data.get("default_branch", "main")
-        print(f"\n[{repos_processed + 1}/{max_repos}] {repo_full_name} ({repo_data['stargazers_count']} stars)")
+        visited.add(repo_full_name)
 
-        # Get closed bug issues
+        overall = already_with_bugs + newly_with_bugs + 1
+        print(f"[{overall}/{max_repos}] {repo_full_name} ({repo_data['stargazers_count']}★)", end=" ", flush=True)
+
         issues_resp = _gh_get(
             f"{BASE_URL}/repos/{repo_full_name}/issues",
             params={"labels": "bug", "state": "closed", "per_page": bugs_per_repo},
@@ -307,37 +356,44 @@ def load_github(max_repos=15, bugs_per_repo=5):
         time.sleep(0.5)
 
         if issues_resp is None:
-            repos_skipped += 1
+            print("→ API error, skipping")
+            _save_checkpoint(db, repo_full_name, 0, had_bugs=False)
             continue
 
         issues = issues_resp.json()
         if not isinstance(issues, list) or not issues:
-            print("  no closed bug issues, skipping")
-            repos_skipped += 1
+            print("→ no closed bug issues")
+            _save_checkpoint(db, repo_full_name, 0, had_bugs=False)
             continue
 
-        _clone_repo(repo_full_name, default_branch)
+        print(f"→ {len(issues)} bug issues found")
+        _clone_repo(repo_full_name, repo_data.get("default_branch", "main"))
 
         repo_inserted = 0
         for issue in issues[:bugs_per_repo]:
-            issue_number = issue["number"]
-            commit_sha = _get_closing_commit(repo_full_name, issue_number)
+            commit_sha = _get_closing_commit(repo_full_name, issue["number"])
             time.sleep(0.5)
-
             if not commit_sha:
                 continue
-
             n = _process_commit(repo_full_name, commit_sha, repo_data["name"], collection)
             repo_inserted += n
             total_inserted += n
             time.sleep(0.5)
 
-        print(f"  inserted {repo_inserted} buggy functions")
-        repos_processed += 1
+        print(f"  → inserted {repo_inserted} buggy functions")
+        _save_checkpoint(db, repo_full_name, repo_inserted, had_bugs=True)
+        newly_with_bugs += 1
 
-    print(f"\nDone. {repos_processed} repos processed, {repos_skipped} skipped.")
-    print(f"Total inserted: {total_inserted} labeled functions from GitHub")
+        if newly_with_bugs % 50 == 0:
+            overall = already_with_bugs + newly_with_bugs
+            print(f"\n{'='*60}")
+            print(f"  PROGRESS: {overall}/{max_repos} repos with bugs | {total_inserted} functions this run")
+            print(f"{'='*60}\n")
+
+    overall_total = already_with_bugs + newly_with_bugs
+    print(f"\nDone. {newly_with_bugs} new repos with bugs processed ({overall_total} total).")
+    print(f"Functions inserted this run: {total_inserted}")
 
 
 if __name__ == "__main__":
-    load_github(max_repos=50, bugs_per_repo=5)
+    load_github(max_repos=1000, bugs_per_repo=15)
