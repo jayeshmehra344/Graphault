@@ -11,3 +11,4 @@ dist/
 .DS_Store
 data/cloned/
 data/graph.json
+tmp/
