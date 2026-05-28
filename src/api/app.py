@@ -101,7 +101,7 @@ class ExplainResponse(BaseModel):
 
 
 # threshold: tune to your validation PR curve, don't leave at 0.5 for 12:1 imbalance
-RISK_THRESHOLD = 0.5
+RISK_THRESHOLD = 0.5417  # tuned to maximise val-F1 via find_threshold.py
 
 
 def _code_to_data(code: str):
