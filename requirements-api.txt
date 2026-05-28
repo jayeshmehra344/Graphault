@@ -2,3 +2,4 @@ torch-geometric
 fastapi
 uvicorn[standard]
 pydantic
+requests

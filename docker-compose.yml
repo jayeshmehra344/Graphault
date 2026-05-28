@@ -1,12 +1,20 @@
 services:
   api:
     build: .
+    image: graphault-api
     ports:
       - "8000:8000"
+    # Secrets are injected at runtime from the host environment or a .env file
+    # that lives outside the image. The API itself only needs these if you add
+    # MongoDB-backed endpoints later — they are NOT needed for /predict or /explain.
+    environment:
+      - MONGO_URI=${MONGO_URI:-}
+      - MONGO_DB_NAME=${MONGO_DB_NAME:-codesense}
     healthcheck:
-      test: ["CMD-SHELL", "curl -sf http://localhost:8000/health || exit 1"]
+      test: ["CMD", "python", "-c",
+             "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
       interval: 30s
       timeout: 10s
-      retries: 5
-      start_period: 40s
+      retries: 3
+      start_period: 15s
     restart: unless-stopped

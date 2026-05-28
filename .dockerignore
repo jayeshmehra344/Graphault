@@ -1,18 +1,35 @@
-.git
+# secrets — must never enter the image
+.env
+.env.*
+*.pem
+*.key
+
+# large local-only data directories
 tmp/
 data/cloned/
-data/sample_repo/
 data/training_data.json
-data/graph.json
 data/pr_curve.png
-src/data/
-src/frontend/node_modules/
-src/frontend/dist/
-__pycache__
+data/graph.json
+
+# Python cache
+__pycache__/
+**/__pycache__/
 *.pyc
 *.pyo
-.env
-devlog.md
+*.pyd
+.pytest_cache/
+
+# frontend (served separately, not part of the API image)
+src/frontend/node_modules/
+src/frontend/dist/
+
+# git / editor
+.git/
+.gitignore
+.vscode/
+.idea/
+
+# dev / CI artefacts
+*.log
 analysis_comment.md
-github_loader_run.log
-changed_files.txt
+devlog.md
