@@ -13,7 +13,7 @@ import { useState, useRef } from "react";
  *   (font: add the two <link> lines from the comment at bottom to index.html)
  */
 
-const API = "http://localhost:8000";
+const API = "http://43.205.146.154";
 const THRESHOLD = 0.5417; // keep in sync with app.py RISK_THRESHOLD
 
 const SAMPLE = `def get_user(users, idx):

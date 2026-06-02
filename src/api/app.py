@@ -68,7 +68,7 @@ app = FastAPI(title="Graphault", description="GNN code vulnerability risk predic
 # Lock allow_origins down to your real frontend URL before AWS deploy.
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://localhost:3000", "http://graphault-frontend.s3-website.ap-south-1.amazonaws.com"],
+    allow_origins=["http://graphault-frontend.s3-website.ap-south-1.amazonaws.com"],
     allow_methods=["*"],
     allow_headers=["*"],
 )
