@@ -1,0 +1,18 @@
+{
+  "n_original": 156774,
+  "n_parseable": 147733,
+  "n_parse_fail": 9041,
+  "n_after_exact": 87858,
+  "n_exact_dups": 59875,
+  "n_after_near": 81140,
+  "n_near_dups": 6718,
+  "n_train": 64911,
+  "n_test": 16229,
+  "n_train_pos": 5127,
+  "n_test_pos": 1282,
+  "jaccard_threshold": 0.9,
+  "minhash_perms": 128,
+  "train_ratio": 0.8,
+  "seed": 42,
+  "overlap": 0
+}
