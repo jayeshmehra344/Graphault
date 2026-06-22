@@ -2,6 +2,7 @@ __pycache__/
 *.pyc
 *.pyo
 .env
+.env.*
 venv/
 .venv/
 *.png
@@ -12,3 +13,9 @@ dist/
 data/cloned/
 data/graph.json
 tmp/
+
+# logs and temp launchers
+*.log
+data/*.bat
+
+# large model/cache files are kept on D:/ — outside repo, no exclusion needed
