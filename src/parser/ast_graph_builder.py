@@ -186,6 +186,69 @@ def build_ast_graph(code: str, label: int = 0) -> Optional[Data]:
     )
 
 
+def build_graph_skeleton(code: str, label: int = 0) -> Optional[tuple]:
+    """
+    Build edge structure + label for a function, without node features.
+
+    Returns (edge_index, edge_attr, y, num_nodes) or None if unparseable.
+    Node count and order match build_ast_graph / precompute_codebert.py's
+    pre-order DFS (_assign_node_ids), so row i of a CodeBERT feature cache
+    entry corresponds to node i here.
+    """
+    tree = _parse_code(code)
+    if tree is None:
+        return None
+
+    root = _find_func_root(tree)
+    if root is None:
+        return None
+
+    node_ids, type_indices = _assign_node_ids(root)
+    n = len(type_indices)
+    if n == 0:
+        return None
+
+    src: list[int] = []
+    dst: list[int] = []
+    etype: list[int] = []
+
+    _add_parent_child_edges(root, node_ids, src, dst, etype)
+    _add_control_flow_edges(root, node_ids, src, dst, etype)
+
+    edge_index = (torch.tensor([src, dst], dtype=torch.long)
+                  if src else torch.zeros((2, 0), dtype=torch.long))
+    edge_attr = (torch.tensor(etype, dtype=torch.long)
+                 if etype else torch.zeros(0, dtype=torch.long))
+
+    return edge_index, edge_attr, torch.tensor([float(label)], dtype=torch.float), n
+
+
+def build_ast_graph_codebert(code: str, feat: torch.Tensor, label: int = 0) -> Optional[Data]:
+    """
+    Build a per-function AST graph using precomputed CodeBERT node features.
+
+    feat must be a FloatTensor[num_nodes, 768] in the same pre-order DFS
+    order as _assign_node_ids (i.e. the order produced by
+    precompute_codebert.py). Returns None if the code cannot be parsed.
+
+    Raises ValueError if feat.shape[0] does not match the AST node count —
+    a mismatch means the node ordering is misaligned and must not be
+    silently zero-filled or truncated.
+    """
+    skeleton = build_graph_skeleton(code, label=label)
+    if skeleton is None:
+        return None
+    edge_index, edge_attr, y, n = skeleton
+
+    if feat.shape[0] != n:
+        raise ValueError(
+            f"CodeBERT feature/AST node count mismatch: "
+            f"cache has {feat.shape[0]} nodes, AST has {n} nodes"
+        )
+
+    return Data(x=feat, edge_index=edge_index, edge_attr=edge_attr, y=y)
+
+
 # ── Test ──────────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
