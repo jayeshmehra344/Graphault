@@ -1,4 +1,6 @@
 import { useState, useRef } from "react";
+import { API, THRESHOLD, C, scoreColor, scoreLabel, Label, PanelHead, Th, Td, Empty } from "./shared.jsx";
+import RepoScan from "./RepoScan.jsx";
 
 /**
  * Graphault Dashboard — single-file React component (Vite).
@@ -13,45 +15,13 @@ import { useState, useRef } from "react";
  *   (font: add the two <link> lines from the comment at bottom to index.html)
  */
 
-const API = "http://43.205.146.154";
-const THRESHOLD = 0.5417; // keep in sync with app.py RISK_THRESHOLD
-
 const SAMPLE = `def get_user(users, idx):
     if idx <= len(users):
         return users[idx - 1]
     return None`;
 
-// muted, functional palette — no AI purple
-const C = {
-  bg: "#0d1117",
-  panel: "#161b22",
-  panelAlt: "#1c2128",
-  border: "#30363d",
-  borderBright: "#3d444d",
-  text: "#e6edf3",
-  textDim: "#7d8590",
-  textFaint: "#484f58",
-  accent: "#388bfd",
-  green: "#3fb950",
-  yellow: "#d29922",
-  red: "#f85149",
-  mono: "'JetBrains Mono', 'SF Mono', ui-monospace, monospace",
-  sans: "'Inter Tight', -apple-system, system-ui, sans-serif",
-};
-
-function scoreColor(score) {
-  if (score >= THRESHOLD) return C.red;
-  if (score >= THRESHOLD * 0.6) return C.yellow;
-  return C.green;
-}
-
-function scoreLabel(score) {
-  if (score >= THRESHOLD) return "FLAGGED";
-  if (score >= THRESHOLD * 0.6) return "REVIEW";
-  return "LOW RISK";
-}
-
 export default function App() {
+  const [tab, setTab] = useState("single");
   const [code, setCode] = useState(SAMPLE);
   const [result, setResult] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -121,6 +91,27 @@ export default function App() {
         </div>
       </header>
 
+      {/* tab bar */}
+      <nav
+        style={{
+          borderBottom: `1px solid ${C.border}`,
+          padding: "0 24px",
+          display: "flex",
+          gap: 4,
+          background: C.panel,
+        }}
+      >
+        <TabButton active={tab === "single"} onClick={() => setTab("single")}>
+          Single Function
+        </TabButton>
+        <TabButton active={tab === "repo"} onClick={() => setTab("repo")}>
+          Repo Scan
+        </TabButton>
+      </nav>
+
+      {tab === "repo" && <RepoScan />}
+
+      {tab === "single" && (
       <main
         style={{
           maxWidth: 1180,
@@ -340,47 +331,30 @@ export default function App() {
           )}
         </section>
       </main>
+      )}
     </div>
   );
 }
 
-const Label = ({ children }) => (
-  <span style={{ fontFamily: C.mono, fontSize: 11, color: C.textDim, letterSpacing: "0.08em", textTransform: "uppercase" }}>
-    {children}
-  </span>
-);
-const PanelHead = ({ children }) => (
-  <div
+const TabButton = ({ active, onClick, children }) => (
+  <button
+    onClick={onClick}
     style={{
+      background: "transparent",
+      border: "none",
+      borderBottom: active ? `2px solid ${C.accent}` : "2px solid transparent",
+      color: active ? C.text : C.textDim,
       fontFamily: C.mono,
-      fontSize: 11,
-      color: C.textDim,
-      padding: "8px 14px",
-      borderBottom: `1px solid ${C.border}`,
+      fontSize: 12,
+      fontWeight: 500,
+      padding: "12px 4px",
+      margin: "0 20px 0 0",
+      cursor: "pointer",
       letterSpacing: "0.04em",
     }}
   >
     {children}
-  </div>
-);
-const Th = ({ children }) => (
-  <th style={{ padding: "8px 14px", fontWeight: 500, borderBottom: `1px solid ${C.border}` }}>{children}</th>
-);
-const Td = ({ children, style }) => <td style={{ padding: "8px 14px", ...style }}>{children}</td>;
-const Empty = ({ children }) => (
-  <div
-    style={{
-      border: `1px dashed ${C.border}`,
-      color: C.textFaint,
-      padding: 32,
-      fontFamily: C.mono,
-      fontSize: 12,
-      textAlign: "center",
-      lineHeight: 1.6,
-    }}
-  >
-    {children}
-  </div>
+  </button>
 );
 
 /*
