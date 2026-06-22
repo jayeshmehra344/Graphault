@@ -33,12 +33,16 @@ from pydantic import BaseModel
 _ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(_ROOT / "src" / "model"))
 sys.path.insert(0, str(_ROOT / "src" / "parser"))
+sys.path.insert(0, str(_ROOT / "src" / "scan"))
 
 # ── Placeholder 1: real model import ────────────────────────────────────────
 from gnn import CodeRiskGNN                         # nn.Module, returns raw logits [N, 1]
 
 # ── Placeholder 2: real graph builder import ────────────────────────────────
 from ast_graph_builder import build_ast_graph       # code:str -> PyG Data | None
+
+# ── Repo scanner: walks a local folder, scores every function in-process ────
+from repo_scan import scan_repo                     # (repo_path, model, threshold) -> {"functions": [...], "summary": {...}}
 
 # ----------------------------------------------------------------------
 MODEL_PATH = str(_ROOT / "data" / "model.pt")
@@ -68,7 +72,11 @@ app = FastAPI(title="Graphault", description="GNN code vulnerability risk predic
 # Lock allow_origins down to your real frontend URL before AWS deploy.
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://graphault-frontend.s3-website.ap-south-1.amazonaws.com"],
+    allow_origins=[
+        "http://graphault-frontend.s3-website.ap-south-1.amazonaws.com",
+        "http://localhost:5173",
+        "http://localhost:5174",
+    ],
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -98,6 +106,30 @@ class ExplainResponse(BaseModel):
     risk_score: float
     label: int
     top_nodes: list[NodeContribution]
+
+
+class ScanRequest(BaseModel):
+    repo_path: str
+
+class FunctionRisk(BaseModel):
+    file_path: str
+    function_name: str
+    lineno: int
+    risk_score: float
+    label_at_threshold: int
+
+class ScanSummary(BaseModel):
+    total_functions: int
+    flagged_count: int
+    threshold: float
+    files_scanned: int
+    file_parse_failures: int
+    function_graph_failures: int
+    top_riskiest: list[FunctionRisk]
+
+class ScanResponse(BaseModel):
+    summary: ScanSummary
+    functions: list[FunctionRisk]
 
 
 # threshold: tune to your validation PR curve, don't leave at 0.5 for 12:1 imbalance
@@ -173,6 +205,27 @@ def explain(req: CodeRequest):
         label=int(score.item() >= RISK_THRESHOLD),
         top_nodes=contribs[:10],          # top 10 most influential nodes
     )
+
+
+@app.post("/scan-repo", response_model=ScanResponse)
+def scan_repo_endpoint(req: ScanRequest):
+    """
+    Scan a local Python repo/folder: extract every function, build its AST
+    graph, and score it with the already-loaded model (no reload, no MongoDB).
+    Delegates the actual walk + scoring to src/scan/repo_scan.scan_repo.
+    """
+    repo_path = Path(req.repo_path)
+    if not repo_path.exists():
+        raise HTTPException(status_code=400, detail=f"Path does not exist: {req.repo_path}")
+    if not repo_path.is_dir():
+        raise HTTPException(status_code=400, detail=f"Not a directory: {req.repo_path}")
+
+    try:
+        report = scan_repo(str(repo_path), model=model, threshold=RISK_THRESHOLD)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Scan failed: {e}")
+
+    return ScanResponse(**report)
 
 
 @app.get("/model-info")
