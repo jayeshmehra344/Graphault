@@ -85,7 +85,7 @@ export default function App() {
           </span>
         </div>
         <div style={{ fontFamily: C.mono, fontSize: 11, color: C.textDim, display: "flex", gap: 16 }}>
-          <span>PR-AUC 0.24</span>
+          <span>PR-AUC 0.23</span>
           <span>thr {THRESHOLD}</span>
           <span style={{ color: C.green }}>● live</span>
         </div>

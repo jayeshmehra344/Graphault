@@ -249,6 +249,38 @@ def build_ast_graph_codebert(code: str, feat: torch.Tensor, label: int = 0) -> O
     return Data(x=feat, edge_index=edge_index, edge_attr=edge_attr, y=y)
 
 
+def get_dfs_ordered_nodes(code: str) -> list:
+    """
+    Return the AST node objects in the same pre-order DFS order that
+    _assign_node_ids uses, rooted at _find_func_root(tree).
+
+    node[i] in the returned list corresponds exactly to graph node i
+    produced by build_ast_graph / build_graph_skeleton for the same code.
+    Returns an empty list if the code cannot be parsed.
+    """
+    tree = _parse_code(code)
+    if tree is None:
+        return []
+    root = _find_func_root(tree)
+    if root is None:
+        return []
+
+    visited: set = set()
+    ordered: list = []
+
+    def _visit(node: ast.AST) -> None:
+        key = id(node)
+        if key in visited:
+            return
+        visited.add(key)
+        ordered.append(node)
+        for child in ast.iter_child_nodes(node):
+            _visit(child)
+
+    _visit(root)
+    return ordered
+
+
 # ── Test ──────────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":

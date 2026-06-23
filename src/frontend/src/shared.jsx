@@ -7,7 +7,7 @@
  */
 
 export const API = import.meta.env.VITE_API_URL || "http://localhost:8000";
-export const THRESHOLD = 0.5417; // keep in sync with app.py RISK_THRESHOLD
+export const THRESHOLD = 0.683; // CodeBERT F1-optimal threshold (keep in sync with app.py RISK_THRESHOLD_CODEBERT)
 
 // muted, functional palette — no AI purple
 export const C = {
