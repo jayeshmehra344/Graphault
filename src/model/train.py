@@ -26,7 +26,7 @@ _ROOT = Path(__file__).resolve().parent.parent.parent
 
 MODEL_PATH                 = _ROOT / "data" / "model.pt"
 MODEL_DEDUPED_PATH         = _ROOT / "data" / "model_deduped_89dim.pt"
-MODEL_DEDUPED_CODEBERT_PATH = _ROOT / "data" / "model_deduped_codebert.pt"
+MODEL_DEDUPED_CODEBERT_PATH     = _ROOT / "data" / "model_deduped_codebert.pt"
 SPLITS_DIR          = _ROOT / "data" / "splits"
 CODEBERT_CACHE_PATH = Path("D:/graphault_cache/codebert_node_features.pt")
 FP16_CACHE_DATA_PATH  = Path("D:/graphault_cache/codebert_fp16.bin")
@@ -564,9 +564,16 @@ def train_deduped_codebert(epochs: int = EPOCHS, save_path: Path = MODEL_DEDUPED
           f"union: {len(needed_ids):,}\n", flush=True)
 
     # ── Pass 1: NaN scan (releases mmap before the write pass) ───────────────
-    nan_ids = _build_nan_set(needed_ids)
-    if _have_ram:
-        print(f"RAM after NaN scan: {_ram_mb():.0f} MB", flush=True)
+    # Skipped when fp16 cache already exists — nan_ids is only consumed by
+    # _prepare_fp16_cache which returns immediately when both files exist.
+    if FP16_CACHE_DATA_PATH.exists() and FP16_CACHE_INDEX_PATH.exists():
+        nan_ids: set = set()
+        size_gb = FP16_CACHE_DATA_PATH.stat().st_size / 1e9
+        print(f"fp16 cache already exists ({size_gb:.2f} GB) — skipping NaN scan.\n", flush=True)
+    else:
+        nan_ids = _build_nan_set(needed_ids)
+        if _have_ram:
+            print(f"RAM after NaN scan: {_ram_mb():.0f} MB", flush=True)
 
     # ── Pass 2: write fp16 binary cache (one-time; skipped if exists) ─────────
     _prepare_fp16_cache(FP16_CACHE_DATA_PATH, FP16_CACHE_INDEX_PATH, needed_ids, nan_ids)
