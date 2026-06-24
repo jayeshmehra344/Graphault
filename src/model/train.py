@@ -4,6 +4,7 @@ import sys
 import json
 import time
 import torch
+import torch.nn.functional as F
 import numpy as np
 from collections import defaultdict
 from torch_geometric.loader import DataLoader
@@ -26,7 +27,8 @@ _ROOT = Path(__file__).resolve().parent.parent.parent
 
 MODEL_PATH                 = _ROOT / "data" / "model.pt"
 MODEL_DEDUPED_PATH         = _ROOT / "data" / "model_deduped_89dim.pt"
-MODEL_DEDUPED_CODEBERT_PATH     = _ROOT / "data" / "model_deduped_codebert.pt"
+MODEL_DEDUPED_CODEBERT_PATH       = _ROOT / "data" / "model_deduped_codebert.pt"
+MODEL_DEDUPED_CODEBERT_FOCAL_PATH = _ROOT / "data" / "model_deduped_codebert_focal.pt"
 SPLITS_DIR          = _ROOT / "data" / "splits"
 CODEBERT_CACHE_PATH = Path("D:/graphault_cache/codebert_node_features.pt")
 FP16_CACHE_DATA_PATH  = Path("D:/graphault_cache/codebert_fp16.bin")
@@ -143,6 +145,22 @@ def _find_best_threshold(labels: np.ndarray, probs: np.ndarray):
     f1s = np.where(denom > 0, 2 * p * r / denom, 0.0)
     best = int(f1s.argmax())
     return float(t[best]), float(f1s[best]), float(p[best]), float(r[best])
+
+
+def focal_loss_with_logits(logits, targets, alpha=0.25, gamma=2.0):
+    """
+    Binary focal loss (Lin et al. 2017) computed from raw logits.
+
+    Numerically stable: BCE is computed via F.binary_cross_entropy_with_logits
+    (uses log-sum-exp trick), then multiplied by the focal modulation factor.
+    p_t = sigma(logit) for positives, 1-sigma(logit) for negatives.
+    alpha_t = alpha for positives, (1-alpha) for negatives.
+    """
+    bce = F.binary_cross_entropy_with_logits(logits, targets, reduction='none')
+    p   = torch.sigmoid(logits)
+    p_t     = p * targets + (1.0 - p) * (1.0 - targets)
+    alpha_t = alpha * targets + (1.0 - alpha) * (1.0 - targets)
+    return (alpha_t * (1.0 - p_t).pow(gamma) * bce).mean()
 
 
 def run_epoch(model, loader, criterion, device, optimizer=None):
@@ -528,7 +546,8 @@ def build_codebert_dataset_fp16(
     return CodeBERTFP16MmapDataset(skeletons, data_path, fp16_index)
 
 
-def train_deduped_codebert(epochs: int = EPOCHS, save_path: Path = MODEL_DEDUPED_CODEBERT_PATH):
+def train_deduped_codebert(epochs: int = EPOCHS, save_path: Path = MODEL_DEDUPED_CODEBERT_PATH,
+                           use_focal_loss: bool = False):
     """
     Retrain on the dedup-pipeline split using 768-dim CodeBERT node features.
 
@@ -614,11 +633,21 @@ def train_deduped_codebert(epochs: int = EPOCHS, save_path: Path = MODEL_DEDUPED
     n_pos  = sum(train_labels)
     n_neg  = len(train_labels) - n_pos
     pos_wt = torch.tensor([n_neg / max(n_pos, 1)], dtype=torch.float).to(device)
-    print(f"Train — pos: {n_pos:,} | neg: {n_neg:,} | pos_weight: {pos_wt.item():.2f}", flush=True)
 
     test_labels_raw = [int(y.item()) for (_, _, _, y, _) in test_data.skeletons]
     n_test_pos = sum(test_labels_raw)
     random_baseline = n_test_pos / max(len(test_labels_raw), 1)
+
+    if use_focal_loss:
+        # Focal loss handles imbalance via alpha/gamma; do NOT also pass pos_weight
+        # (that would double-count the imbalance correction).
+        criterion = lambda logits, targets: focal_loss_with_logits(
+            logits, targets, alpha=0.25, gamma=2.0)
+        print(f"Train — pos: {n_pos:,} | neg: {n_neg:,} | loss=focal(alpha=0.25, gamma=2.0)", flush=True)
+    else:
+        criterion = torch.nn.BCEWithLogitsLoss(pos_weight=pos_wt)
+        print(f"Train — pos: {n_pos:,} | neg: {n_neg:,} | pos_weight: {pos_wt.item():.2f}", flush=True)
+
     print(f"Test  — pos: {n_test_pos:,} | neg: {len(test_labels_raw)-n_test_pos:,}"
           f" | random baseline PR-AUC: {random_baseline:.4f}\n", flush=True)
 
@@ -628,11 +657,11 @@ def train_deduped_codebert(epochs: int = EPOCHS, save_path: Path = MODEL_DEDUPED
 
     model     = CodeRiskGNN(CODEBERT_DIM, HIDDEN_DIM, 1).to(device)
     optimizer = torch.optim.Adam(model.parameters(), lr=LR)
-    criterion = torch.nn.BCEWithLogitsLoss(pos_weight=pos_wt)
 
     save_path.parent.mkdir(parents=True, exist_ok=True)
     best_pr_auc = 0.0
     best_state  = None
+    best_epoch  = 0
     peak_ram_mb = _ram_mb()
 
     ram_col = "  {:>7}".format("RAM") if _have_ram else ""
@@ -658,10 +687,12 @@ def train_deduped_codebert(epochs: int = EPOCHS, save_path: Path = MODEL_DEDUPED
 
         if te_auc > best_pr_auc:
             best_pr_auc = te_auc
+            best_epoch  = epoch
             best_state  = {k: v.clone() for k, v in model.state_dict().items()}
 
     torch.save(best_state, save_path)
     print(f"\nBest test PR-AUC : {best_pr_auc:.4f}")
+    print(f"Best epoch       : {best_epoch}")
     if _have_ram:
         print(f"Peak system RAM  : {peak_ram_mb:.0f} MB")
     if device.type == "cuda":
@@ -708,7 +739,22 @@ def train_deduped_codebert(epochs: int = EPOCHS, save_path: Path = MODEL_DEDUPED
 
 
 if __name__ == "__main__":
-    if len(sys.argv) > 1 and sys.argv[1] == "codebert":
+    if len(sys.argv) > 1 and sys.argv[1] == "codebert-focal-80":
+        # Extend focal run to 80 epochs. Same alpha/gamma, same split, same CodeBERT cache.
+        # focal.pt (50-epoch, 0.2372) is NOT overwritten.
+        train_deduped_codebert(
+            epochs=80,
+            use_focal_loss=True,
+            save_path=_ROOT / "data" / "model_deduped_codebert_focal_80.pt",
+        )
+    elif len(sys.argv) > 1 and sys.argv[1] == "codebert-focal":
+        # Focal loss experiment: gamma=2.0, alpha=0.25. Everything else identical to baseline.
+        # Baseline locked at model_deduped_codebert.pt — NOT overwritten.
+        train_deduped_codebert(
+            use_focal_loss=True,
+            save_path=MODEL_DEDUPED_CODEBERT_FOCAL_PATH,
+        )
+    elif len(sys.argv) > 1 and sys.argv[1] == "codebert":
         train_deduped_codebert()
     elif len(sys.argv) > 1 and sys.argv[1] == "codebert-sanity":
         train_deduped_codebert(
