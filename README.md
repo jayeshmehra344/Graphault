@@ -126,11 +126,14 @@ Evaluated on the held-out test split (16,229 functions, 1,224 positive). PR-AUC 
 |---|---|---|---|---|---|
 | Random baseline | 0.0763 | 1.00× | — | — | — |
 | 89-dim AST one-hot GNN | 0.2042 | 2.68× | — | — | — |
-| **CodeBERT 768-dim GNN** | **0.2318** | **3.04×** | **0.282** | **0.228** | **0.370** |
+| CodeBERT 768-dim GNN (mean-pool, BCE@50) | 0.2318 | 3.04× | 0.282 | 0.228 | 0.370 |
+| **CodeBERT 768-dim + attention pooling (attnpool@80)** | **0.3048** | **4.00×** | **0.3346** | **0.2857** | **0.4036** |
 
-*CodeBERT model: best checkpoint at epoch 48 of 50. Optimal threshold: 0.683. At threshold 0.5: F1 0.247, precision 0.152, recall 0.658.*
+*BCE@50 / 89-dim model: best checkpoint at epoch 48 of 50. Optimal threshold: 0.683. At threshold 0.5: F1 0.247, precision 0.152, recall 0.658.*
 
-**On the numbers:** A PR-AUC of 0.23 sounds low — it is, and it's intentional to say so. The task is hard: shallow GNN mean-pooling, 12:1 imbalance, and label noise from multi-function CVE commits all suppress precision. The 3.04× uplift over a random classifier is reproducible and real. CodeBERT node features (+0.028 PR-AUC, +13.5% relative over the one-hot baseline) confirm that token semantics add signal beyond pure graph structure. The roadmap items below are the concrete next steps to close the gap with SOTA detectors.
+*attnpool@80: best checkpoint at epoch 71 of 80. Optimal threshold: **0.2645** (not 0.683 — focal loss shifts the score distribution; thresholds are not portable across loss functions). Trained and benchmarked; not yet deployed — CodeBERT inference OOMs on the t3.micro serving the live API.*
+
+**On the numbers:** A PR-AUC of 0.30 is a working research prototype, not a production security scanner — and it's intentional to say so. The task is hard: 12:1 imbalance, label noise from multi-function CVE commits, and shallow graph structure all suppress precision. The 4.00× uplift over a random classifier (best model) is reproducible and real. Honest attribution for the 0.2318→0.3048 gain: CodeBERT node features gave +0.028 over the one-hot baseline; training longer (50→80 epochs) added +0.0195; switching to focal loss added only +0.0031 (marginal, not the story); the decisive architectural lever was replacing mean-pool with attention pooling (+0.0504) — the model now attends to the highest-risk AST nodes rather than averaging across all nodes equally.
 
 <div align="center">
 
@@ -234,8 +237,8 @@ Returns model architecture metadata, evaluation metrics, threshold, and dataset 
 ### 1. Clone and install
 
 ```bash
-git clone https://github.com/jayeshmehra344/codesense.git
-cd codesense
+git clone https://github.com/jayeshmehra344/Graphault.git
+cd Graphault
 python -m venv venv
 source venv/bin/activate          # Windows: venv\Scripts\activate
 pip install torch==2.12.0 --index-url https://download.pytorch.org/whl/cpu
@@ -324,8 +327,9 @@ codesense/
 │   │   ├── train_ids.json            # 64,911 deduplicated training function IDs
 │   │   └── test_ids.json             # 16,229 held-out test function IDs
 │   ├── model.pt                      # Weights — 89-dim one-hot GNN baseline
-│   ├── model_deduped_89dim.pt        # Weights — 89-dim on deduplicated split
-│   └── model_deduped_codebert.pt     # Weights — CodeBERT 768-dim (production)
+│   ├── model_deduped_89dim.pt        # Weights — 89-dim on deduplicated split (live/deployed)
+│   ├── model_deduped_codebert.pt     # Weights — CodeBERT mean-pool baseline, historical (PR-AUC 0.2318)
+│   └── model_deduped_codebert_attnpool.pt  # Weights — CodeBERT + attention pooling, best trained model (PR-AUC 0.3048; not yet deployed)
 ├── docs/                             # Screenshots (fill with real captures)
 │   ├── dashboard.png
 │   ├── repo-scan.png
@@ -354,11 +358,12 @@ codesense/
 ## Roadmap
 
 **Model quality**
+- [x] **Attention pooling — shipped** (`AttentionalAggregation` gate replaces mean-pool, +0.0504 PR-AUC): model attends to highest-risk AST nodes rather than averaging equally. New best: PR-AUC 0.3048, 4.00× random.
+- [x] **Focal loss — shipped, marginal** (+0.0031 PR-AUC at equal epochs): honest result — most of the 0.2318→0.2544 gain was longer training (+0.0195), not the loss change. Useful for threshold calibration; not a primary lever.
+- [ ] **GIN layers** (next lever): replace GCNConv with GINConv for higher expressivity (Weisfeiler-Leman). Keep attention pooling + focal loss, isolate the conv change.
 - [ ] Multi-edge CPG with explicit data-flow (def→use) and control-flow edges + relational GNN (RGCN) treating each edge type separately
-- [ ] Attention-based pooling (Graph Attention Networks / GIN) instead of mean pooling — attends to the highest-risk subgraph rather than averaging across all nodes
-- [ ] Regularisation: dropout tuning, label smoothing, mixup on graph embeddings to reduce the train/test PR-AUC gap (~0.045 at epoch 50)
+- [ ] Regularisation: dropout p=0.3 already active in all runs; early stopping tested (patience=7) and counterproductive — cuts off the peak. Remaining untested: label smoothing, mixup on graph embeddings.
 - [ ] GraphCodeBERT (code-structure-aware pretraining) as a drop-in replacement for vanilla CodeBERT node features
-- [ ] Focal loss to further address the 12:1 class imbalance
 - [ ] Ensemble: majority-vote across one-hot GNN + CodeBERT GNN + tree-kernel SVM for improved precision
 
 **Data**
