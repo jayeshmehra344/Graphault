@@ -206,8 +206,7 @@ def _run_inference(model, dataset, batch_size: int):
     with torch.no_grad():
         for batch in loader:
             batch = batch.to(device)
-            node_logits = model(batch.x, batch.edge_index)
-            logits = global_mean_pool(node_logits, batch.batch).squeeze(-1)
+            logits = model(batch.x, batch.edge_index, batch.batch).squeeze(-1)
             all_probs.extend(torch.sigmoid(logits).cpu().tolist())
             all_labels.extend(batch.y.cpu().tolist())
 
@@ -313,7 +312,8 @@ def main():
     # ── 4. load checkpoint ──────────────────────────────────────────────────────
     print(f"\nLoading checkpoint: {checkpoint_path}", flush=True)
     state_dict = torch.load(checkpoint_path, map_location="cpu", weights_only=True)
-    model = CodeRiskGNN(in_channels, HIDDEN_DIM, 1)
+    pooling = "attention" if any(k.startswith("attn_pool") for k in state_dict) else "mean"
+    model = CodeRiskGNN(in_channels, HIDDEN_DIM, 1, pooling=pooling)
     model.load_state_dict(state_dict)
     actual_in = model.conv1.in_channels
     print(f"  conv1.in_channels = {actual_in}  (89 = one-hot, 768 = CodeBERT)", flush=True)

@@ -27,8 +27,9 @@ _ROOT = Path(__file__).resolve().parent.parent.parent
 
 MODEL_PATH                 = _ROOT / "data" / "model.pt"
 MODEL_DEDUPED_PATH         = _ROOT / "data" / "model_deduped_89dim.pt"
-MODEL_DEDUPED_CODEBERT_PATH       = _ROOT / "data" / "model_deduped_codebert.pt"
-MODEL_DEDUPED_CODEBERT_FOCAL_PATH = _ROOT / "data" / "model_deduped_codebert_focal.pt"
+MODEL_DEDUPED_CODEBERT_PATH         = _ROOT / "data" / "model_deduped_codebert.pt"
+MODEL_DEDUPED_CODEBERT_FOCAL_PATH   = _ROOT / "data" / "model_deduped_codebert_focal.pt"
+MODEL_DEDUPED_CODEBERT_ATTNPOOL_PATH = _ROOT / "data" / "model_deduped_codebert_attnpool.pt"
 SPLITS_DIR          = _ROOT / "data" / "splits"
 CODEBERT_CACHE_PATH = Path("D:/graphault_cache/codebert_node_features.pt")
 FP16_CACHE_DATA_PATH  = Path("D:/graphault_cache/codebert_fp16.bin")
@@ -176,9 +177,7 @@ def run_epoch(model, loader, criterion, device, optimizer=None):
             if training:
                 optimizer.zero_grad()
 
-            # node-level logits -> graph-level via mean pooling over each graph's nodes
-            node_logits = model(batch.x, batch.edge_index)  # [total_nodes, 1]
-            logits = global_mean_pool(node_logits, batch.batch).squeeze(-1)  # [batch_size]
+            logits = model(batch.x, batch.edge_index, batch.batch).squeeze(-1)  # [batch_size]
             loss = criterion(logits, batch.y)
 
             if training:
@@ -320,8 +319,7 @@ def train_deduped():
     with torch.no_grad():
         for batch in test_loader:
             batch = batch.to(device)
-            node_logits = model(batch.x, batch.edge_index)
-            logits = global_mean_pool(node_logits, batch.batch).squeeze(-1)
+            logits = model(batch.x, batch.edge_index, batch.batch).squeeze(-1)
             all_probs.extend(torch.sigmoid(logits).cpu().tolist())
             all_labels.extend(batch.y.cpu().tolist())
 
@@ -547,7 +545,7 @@ def build_codebert_dataset_fp16(
 
 
 def train_deduped_codebert(epochs: int = EPOCHS, save_path: Path = MODEL_DEDUPED_CODEBERT_PATH,
-                           use_focal_loss: bool = False):
+                           use_focal_loss: bool = False, pooling: str = "mean"):
     """
     Retrain on the dedup-pipeline split using 768-dim CodeBERT node features.
 
@@ -655,7 +653,7 @@ def train_deduped_codebert(epochs: int = EPOCHS, save_path: Path = MODEL_DEDUPED
     train_loader = DataLoader(train_data, batch_size=_bs, shuffle=True,  num_workers=0)
     test_loader  = DataLoader(test_data,  batch_size=_bs, shuffle=False, num_workers=0)
 
-    model     = CodeRiskGNN(CODEBERT_DIM, HIDDEN_DIM, 1).to(device)
+    model     = CodeRiskGNN(CODEBERT_DIM, HIDDEN_DIM, 1, pooling=pooling).to(device)
     optimizer = torch.optim.Adam(model.parameters(), lr=LR)
 
     save_path.parent.mkdir(parents=True, exist_ok=True)
@@ -708,8 +706,7 @@ def train_deduped_codebert(epochs: int = EPOCHS, save_path: Path = MODEL_DEDUPED
     with torch.no_grad():
         for batch in test_loader:
             batch = batch.to(device)
-            node_logits = model(batch.x, batch.edge_index)
-            logits = global_mean_pool(node_logits, batch.batch).squeeze(-1)
+            logits = model(batch.x, batch.edge_index, batch.batch).squeeze(-1)
             all_probs.extend(torch.sigmoid(logits).cpu().tolist())
             all_labels.extend(batch.y.cpu().tolist())
 
@@ -739,7 +736,16 @@ def train_deduped_codebert(epochs: int = EPOCHS, save_path: Path = MODEL_DEDUPED
 
 
 if __name__ == "__main__":
-    if len(sys.argv) > 1 and sys.argv[1] == "codebert-focal-80":
+    if len(sys.argv) > 1 and sys.argv[1] == "codebert-attnpool":
+        # Attention pooling experiment: same focal config as focal@80, only pooling changed.
+        # focal_80.pt is NOT overwritten.
+        train_deduped_codebert(
+            epochs=80,
+            use_focal_loss=True,
+            pooling="attention",
+            save_path=MODEL_DEDUPED_CODEBERT_ATTNPOOL_PATH,
+        )
+    elif len(sys.argv) > 1 and sys.argv[1] == "codebert-focal-80":
         # Extend focal run to 80 epochs. Same alpha/gamma, same split, same CodeBERT cache.
         # focal.pt (50-epoch, 0.2372) is NOT overwritten.
         train_deduped_codebert(
