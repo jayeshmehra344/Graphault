@@ -275,3 +275,86 @@ No changes today.
 **Summary:**
 Short focused session on model training — `src/model/train.py` was modified and executed, with `data/smoke_test.log` produced as output, suggesting a lightweight smoke-test training run was used to validate the pipeline (likely following recent changes to the AST builder or CodeBERT precompute step). The `.claude/settings.local.json` update just before the run is consistent with a brief configuration adjustment prior to kicking off the training script.
 
+---
+2026-06-24
+---
+
+**Files modified today:**
+- `src/model/train.py` (08:58)
+- `data/model_deduped_codebert_focal_80.pt` (11:02)
+- `data/run_smoke.bat` (11:29)
+- `data/smoke_ram_err.log` (11:29)
+- `data/model_codebert_smoke.pt` (11:42)
+- `data/smoke_ram.log` (11:42)
+- `.claude/settings.local.json` (12:57)
+- `data/eval/model_deduped_codebert_focal_80_test_preds.json` (12:58)
+- `src/frontend/package.json` (13:40)
+- `src/frontend/src/App.jsx` (13:45)
+- `src/frontend/src/shared.jsx` (13:45)
+- `data/run_full.bat` (16:18)
+- `data/train_codebert_full_err.log` (16:18)
+- `data/model_deduped_codebert.pt` (17:48)
+- `data/train_codebert_full.log` (17:48)
+- `data/smoke_codebert_lazy_err.log` (17:52)
+- `data/smoke_codebert_lazy.log` (17:56)
+- `src/model/evaluate.py` (19:36)
+- `data/eval/model_deduped_89dim_test_preds.json` (19:39)
+- `src/api/app.py` (19:43)
+- `src/parser/ast_graph_builder.py` (19:43)
+- `data/eval/model_deduped_codebert_reg_test_preds.json` (20:37)
+- `data/eval/model_deduped_codebert_test_preds.json` (20:42)
+- `data/model_deduped_codebert_focal.pt` (21:54)
+- `data/eval/model_deduped_codebert_focal_test_preds.json` (22:00)
+- `docs/.gitkeep` (22:39)
+- `README.md` (22:40)
+- `.gitignore` (22:48)
+
+**Summary:**
+A very heavy ML training day centred on model experimentation and evaluation — `src/model/train.py` was modified early and then put through multiple training runs (smoke tests, full runs, and focal-loss variants), producing a sequence of checkpoints: `model_codebert_smoke.pt`, `model_deduped_codebert.pt`, `model_deduped_codebert_focal.pt`, and `model_deduped_codebert_focal_80.pt`, suggesting systematic iteration on loss functions and class-weight thresholds to improve detection precision. The evening session added a dedicated `src/model/evaluate.py` script and generated test-set prediction files in `data/eval/` for four distinct model variants (89-dim, codebert, codebert-reg, codebert-focal), enabling direct comparison of model quality. Alongside this, `src/parser/ast_graph_builder.py` and `src/api/app.py` were updated, the React frontend's `App.jsx` and `shared.jsx` were revised, and the project received a README update and `.gitignore` cleanup — indicating a broad push toward a cleaner, more polished state of the codebase.
+
+---
+2026-06-25
+---
+
+**Files modified today:**
+- `src/model/evaluate.py` (13:07)
+- `src/model/gnn.py` (13:07)
+- `data/model_deduped_codebert_attnpool.pt` (14:04)
+- `data/eval/model_deduped_codebert_attnpool_test_preds.json` (14:47)
+- `src/model/train.py` (15:12)
+- `data/model_deduped_codebert_bce80.pt` (17:08)
+- `.claude/settings.local.json` (17:23)
+- `data/eval/model_deduped_codebert_bce80_test_preds.json` (17:23)
+- `README.md` (19:10)
+
+**Summary:**
+A focused model experimentation session extending yesterday's evaluation work — `src/model/gnn.py` was modified alongside `evaluate.py`, introducing at least one new architectural variant (attention pooling, as evidenced by `model_deduped_codebert_attnpool.pt`) and a BCE-loss model with an 80% threshold (`model_deduped_codebert_bce80.pt`). Both checkpoints were immediately evaluated against the test set, with predictions written to `data/eval/` for direct comparison with the focal-loss and other variants produced on June 24th. The `README.md` update in the evening suggests documentation was revised to reflect the growing model comparison landscape.
+
+---
+2026-06-26
+---
+
+**Files modified today:** None
+
+**Summary:**
+No changes today.
+
+---
+2026-06-27
+---
+
+**Files modified today:**
+- `src/model/evaluate.py` (13:07)
+- `src/model/gnn.py` (13:07)
+- `data/model_deduped_codebert_attnpool.pt` (14:04)
+- `data/eval/model_deduped_codebert_attnpool_test_preds.json` (14:47)
+- `src/model/train.py` (15:12)
+- `data/model_deduped_codebert_bce80.pt` (17:08)
+- `.claude/settings.local.json` (17:23)
+- `data/eval/model_deduped_codebert_bce80_test_preds.json` (17:23)
+- `README.md` (19:10)
+
+**Summary:**
+Continued model architecture and loss-function experimentation — `src/model/gnn.py` was modified alongside `evaluate.py` in the morning, introducing an attention-pooling variant of CodeRiskGNN (producing `data/model_deduped_codebert_attnpool.pt`) and a BCE-loss model with an 80% positive-class weight (`data/model_deduped_codebert_bce80.pt`). Both checkpoints were immediately evaluated against the test set with predictions written to `data/eval/`, extending the multi-model comparison framework established in recent sessions. `train.py` was also updated mid-afternoon, suggesting further tuning of training hyperparameters or data-loading logic, and the `README.md` received another update in the evening — likely documenting the new model variants and evaluation results.
+
+

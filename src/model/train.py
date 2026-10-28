@@ -30,6 +30,7 @@ MODEL_DEDUPED_PATH         = _ROOT / "data" / "model_deduped_89dim.pt"
 MODEL_DEDUPED_CODEBERT_PATH         = _ROOT / "data" / "model_deduped_codebert.pt"
 MODEL_DEDUPED_CODEBERT_FOCAL_PATH   = _ROOT / "data" / "model_deduped_codebert_focal.pt"
 MODEL_DEDUPED_CODEBERT_ATTNPOOL_PATH = _ROOT / "data" / "model_deduped_codebert_attnpool.pt"
+MODEL_DEDUPED_CODEBERT_BCE80_PATH    = _ROOT / "data" / "model_deduped_codebert_bce80.pt"
 SPLITS_DIR          = _ROOT / "data" / "splits"
 CODEBERT_CACHE_PATH = Path("D:/graphault_cache/codebert_node_features.pt")
 FP16_CACHE_DATA_PATH  = Path("D:/graphault_cache/codebert_fp16.bin")
@@ -744,6 +745,14 @@ if __name__ == "__main__":
             use_focal_loss=True,
             pooling="attention",
             save_path=MODEL_DEDUPED_CODEBERT_ATTNPOOL_PATH,
+        )
+    elif len(sys.argv) > 1 and sys.argv[1] == "codebert-bce80":
+        # Attribution run: BCE+pos_weight at 80 epochs, mean-pool. Isolates epochs effect
+        # from focal loss. baseline.pt / focal_80.pt / attnpool.pt are NOT overwritten.
+        train_deduped_codebert(
+            epochs=80,
+            use_focal_loss=False,
+            save_path=MODEL_DEDUPED_CODEBERT_BCE80_PATH,
         )
     elif len(sys.argv) > 1 and sys.argv[1] == "codebert-focal-80":
         # Extend focal run to 80 epochs. Same alpha/gamma, same split, same CodeBERT cache.
